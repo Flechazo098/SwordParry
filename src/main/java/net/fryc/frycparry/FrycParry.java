@@ -8,7 +8,7 @@ import net.fabricmc.fabric.api.command.v1.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fryc.frycparry.attributes.json.ParryAttributesResourceReloadListener;
 import net.fryc.frycparry.attributes.json.ParryItemsResourceReloadLoader;
-import net.fryc.frycparry.commands.ParryAttibutesCommand;
+import net.fryc.frycparry.commands.ParryAttributesCommand;
 import net.fryc.frycparry.config.FrycParryConfig;
 import net.fryc.frycparry.effects.ModEffects;
 import net.fryc.frycparry.enchantments.ModEnchantments;
@@ -38,6 +38,6 @@ public class FrycParry implements ModInitializer {
         ModEnchantments.registerModEnchantments();
         ModSounds.registerModSounds();
 
-        CommandRegistrationCallback.EVENT.register(ParryAttibutesCommand::register);
+        CommandRegistrationCallback.EVENT.register(ParryAttributesCommand::register);
     }
 }

@@ -15,6 +15,9 @@
     ],
     "main": [
       "net.fryc.frycparry.FrycParry"
+    ],
+    "modmenu": [
+      "net.fryc.frycparry.config.ModMenuIntegration"
     ]
   },
   "mixins": [
