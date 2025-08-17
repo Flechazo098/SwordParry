@@ -81,7 +81,6 @@ public class ParryAttributes {
         this.shouldStopUsingItemAfterBlockOrParry = shouldStopUsingItemAfterBlockOrParry;
         this.knockbackAfterParryAction = knockbackAfterParryAction;
 
-        // Convert list to map
         this.parryEffects = new HashMap<>();
         for (ParryEffect effect : parryEffectsList) {
             this.parryEffects.put(effect.statusEffect(),
@@ -89,7 +88,6 @@ public class ParryAttributes {
         }
     }
 
-    // Original constructor for backward compatibility
     protected ParryAttributes(int parryTicks, float meleeDamageTakenAfterBlock, float projectileDamageTakenAfterBlock,
                               float explosionDamageTakenAfterBlock,
                               float cooldownAfterParryAction, float cooldownAfterInterruptingBlockAction, float cooldownAfterAttack,
@@ -111,7 +109,6 @@ public class ParryAttributes {
         this.parryEffects = parryEffects;
     }
 
-    // Helper method for codec
     private List<ParryEffect> getParryEffectsList() {
         return parryEffects.entrySet().stream()
                 .map(entry -> new ParryEffect(
@@ -143,7 +140,6 @@ public class ParryAttributes {
         return parryAttributes;
     }
 
-    // ... existing code ...
     public static ParryAttributes getDefaultParryAttributes(Item item) {
         if (item instanceof PickaxeItem) return new ParryAttributes(
                 FrycParry.config.pickaxe.pickaxeParryTicks, (float) FrycParry.config.pickaxe.pickaxeBlockMeleeDamageTaken / 100,
@@ -204,7 +200,6 @@ public class ParryAttributes {
         return ParryAttributes.DEFAULT;
     }
 
-    // Getters
     public int getMaxUseTimeParry() {
         return this.maxUseTime;
     }
