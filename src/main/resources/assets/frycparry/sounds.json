@@ -1,0 +1,41 @@
+{
+  "tool_parry": {
+    "subtitle": "sound.frycparry.tool_parry",
+    "sounds": [
+      "frycparry:tool_parry"
+    ]
+  },
+  "tool_block": {
+    "subtitle": "sound.frycparry.tool_block",
+    "sounds": [
+      "frycparry:tool_block"
+    ]
+  },
+  "tool_guard_break": {
+    "subtitle": "sound.frycparry.tool_guard_break",
+    "sounds": [
+      "frycparry:tool_guard_break"
+    ]
+  },
+  "shield_parry": {
+    "subtitle": "sound.frycparry.shield_parry",
+    "sounds": [
+      "frycparry:shield_parry1",
+      "frycparry:shield_parry2",
+      "frycparry:shield_parry3",
+      "frycparry:shield_parry4"
+    ]
+  },
+  "shield_block": {
+    "subtitle": "sound.frycparry.shield_block",
+    "sounds": [
+      "frycparry:shield_block"
+    ]
+  },
+  "shield_guard_break": {
+    "subtitle": "sound.frycparry.shield_guard_break",
+    "sounds": [
+      "frycparry:shield_guard_break"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "frycparry",
+  "version": "${version}",
+  "name": "Sword Parry",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/frycparry/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "net.fryc.frycparry.FrycParryClient"
+    ],
+    "main": [
+      "net.fryc.frycparry.FrycParry"
+    ]
+  },
+  "mixins": [
+    "frycparry.mixins.json"
+  ],
+  "accessWidener" : "frycparry.accesswidener",
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}

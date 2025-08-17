@@ -1,0 +1,377 @@
+package net.fryc.frycparry.mixin;
+
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fryc.frycparry.FrycParry;
+import net.fryc.frycparry.effects.ModEffects;
+import net.fryc.frycparry.enchantments.ModEnchantments;
+import net.fryc.frycparry.network.ModPackets;
+import net.fryc.frycparry.network.payloads.InformClientAboutParryPayload;
+import net.fryc.frycparry.tag.ModEntityTypeTags;
+import net.fryc.frycparry.util.ParryHelper;
+import net.fryc.frycparry.util.interfaces.CanBlock;
+import net.fryc.frycparry.util.interfaces.ParryItem;
+import net.fryc.frycparry.util.interfaces.TargetingMob;
+import net.minecraft.entity.*;
+import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.AxeItem;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.ShieldItem;
+import net.minecraft.network.PacketByteBuf;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Hand;
+import net.minecraft.util.UseAction;
+import net.minecraft.world.World;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+
+@Mixin(LivingEntity.class)
+abstract class LivingEntityMixin extends Entity implements CanBlock {
+
+    private static final TrackedData<Boolean> BLOCKING_DATA;
+    private static final TrackedData<Boolean> PARRY_DATA;
+
+    public int parryTimer = 0;
+
+    @Shadow
+    protected ItemStack activeItemStack;
+    @Shadow
+    protected int itemUseTimeLeft;
+
+
+    public LivingEntityMixin(EntityType<?> type, World world) {
+        super(type, world);
+    }
+
+    @Inject(method = "onStatusEffectRemoved", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/effect/StatusEffect;onRemoved(Lnet/minecraft/entity/LivingEntity;Lnet/minecraft/entity/attribute/AttributeContainer;I)V", shift = At.Shift.BEFORE))
+    protected void onDisarmedRemoved(StatusEffectInstance effect, CallbackInfo info) {
+        LivingEntity dys = ((LivingEntity) (Object) this);
+        if (effect.getEffectType() == ModEffects.DISARMED) {
+            if (dys instanceof MobEntity mob) {
+                mob.setTarget(((TargetingMob) mob).frycparry_getLastTarget());
+                ((TargetingMob) mob).frycparry_setLastTarget(null);
+                mob.setAttacking(true);
+            }
+        }
+    }
+
+
+    @Inject(method = "damage(Lnet/minecraft/entity/damage/DamageSource;F)Z", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/LivingEntity;damageShield(F)V", shift = At.Shift.AFTER))
+    private void parryOrFullyBlock(DamageSource source, float amount, CallbackInfoReturnable<Boolean> ret) { // <----- executed only on server
+        LivingEntity dys = ((LivingEntity) (Object) this);
+        boolean shouldSwingHand = false;
+        boolean playSound = true;
+        if (ParryHelper.isItemParryEnabled(dys.getActiveItem())) {
+            if (((CanBlock) dys).frycparry_getParryDataValue()) { // <--- checks if attack was parried
+                ((CanBlock) dys).frycparry_setParryDataToFalse();
+                ((CanBlock) dys).frycparry_setParryTimer(dys.getWorld(), 10);
+                shouldSwingHand = true;
+
+                if (source.getAttacker() instanceof LivingEntity attacker) {
+                    if (!source.isProjectile()) {
+                        //applying parry effects
+                        ParryHelper.applyParryEffects(dys, attacker);
+
+                        //counterattack enchantment and disabling block
+                        if (dys instanceof PlayerEntity player) {
+                            //counterattack enchantment
+                            ParryHelper.applyCounterattackEffects(player, attacker);
+
+                            //disabling block after parrying axe attack (when config allows it)
+                            if (isAxeWielder(attacker) && FrycParry.config.server.disableBlockAfterParryingAxeAttack) {
+                                ParryHelper.disableParryItem(player, dys.getActiveItem().getItem());
+                                dys.swingHand(dys.getActiveHand(), true);
+                                playSound = false;
+                            }
+                        }
+                    }
+                }
+
+                if (playSound) {
+                    ParryHelper.playParrySound(dys);
+                }
+            } else {
+                ((CanBlock) dys).frycparry_setParryDataToFalse();
+                if (dys instanceof PlayerEntity player) {
+                    if (source.getAttacker() instanceof LivingEntity attacker) {
+                        if (isAxeWielder(attacker)) {
+                            ParryHelper.disableParryItem(player, dys.getActiveItem().getItem());
+                            ParryHelper.playGuardBreakSound(player);
+                            playSound = false;
+                        }
+                    }
+                }
+
+                if (playSound) {
+                    ParryHelper.playBlockSound(dys);
+                }
+            }
+
+
+            // interrupting block action after PARRYING or FULLY BLOCKING (no dmg) attack with tool
+            if (((ParryItem) dys.getActiveItem().getItem()).frycparry_getParryAttributes().shouldStopUsingItemAfterBlockOrParry()) {
+                ((CanBlock) dys).frycparry_stopUsingItemParry();
+                if (shouldSwingHand) dys.swingHand(dys.getActiveHand(), true);
+            }
+
+            //damaging item that is not shield
+            if (!ParryHelper.hasShieldEquipped(dys)) {
+                if (dys.getMainHandStack().isDamageable()) {
+                    dys.getMainHandStack().damage(1, dys, (entity) -> {
+                        entity.sendEquipmentBreakStatus(EquipmentSlot.MAINHAND);
+                    });
+                }
+            }
+        }
+    }
+
+    private boolean isAxeWielder(LivingEntity entity) {
+        return entity.getMainHandStack().getItem() instanceof AxeItem;
+    }
+
+    @ModifyVariable(method = "damage(Lnet/minecraft/entity/damage/DamageSource;F)Z", at = @At("HEAD"), ordinal = 0)
+    private float blocking(float amount, DamageSource source) {
+        LivingEntity dys = ((LivingEntity) (Object) this);
+        if (dys.getActiveItem().isEmpty() || !ParryHelper.isItemParryEnabled(dys.getActiveItem()) || dys.getWorld().isClient())
+            return amount;
+        if (ParryHelper.attackWasBlocked(source, dys)) {
+            if (ParryHelper.attackWasParried(source, dys.getActiveItem(), dys)) {
+                ((CanBlock) dys).frycparry_setParryDataToTrue();
+                return amount;
+            }
+            if (amount > 0.0F && !dys.blockedByShield(source)) {
+                boolean playSound = true;
+                float originalDamage = amount;
+
+                if (source.isExplosive()) {
+                    ParryItem parryItem = (ParryItem) dys.getActiveItem().getItem();
+                    if (ParryHelper.explosionCanBeBlocked(parryItem)) {
+                        float multiplier;
+                        if (ParryHelper.explosionWasSuccessfullyBlocked(parryItem, dys)) {
+                            multiplier = parryItem.frycparry_getParryAttributes().getExplosionDamageTakenAfterBlock();
+                        } else {
+                            multiplier = 1.0F - (1.0F - parryItem.frycparry_getParryAttributes().getExplosionDamageTakenAfterBlock()) / 5;
+                        }
+                        amount *= multiplier;
+                    } else {
+                        playSound = false;
+                    }
+                } else if (source.isProjectile()) {
+                    amount *= ((ParryItem) dys.getActiveItem().getItem()).frycparry_getParryAttributes().getProjectileDamageTakenAfterBlock();
+                } else if (source.getAttacker() instanceof LivingEntity attacker) {
+                    amount *= ((ParryItem) dys.getActiveItem().getItem()).frycparry_getParryAttributes().getMeleeDamageTakenAfterBlock();
+                    if (isAxeWielder(attacker) && dys instanceof PlayerEntity player) {
+                        ParryHelper.disableParryItem(player, dys.getActiveItem().getItem());
+                        ParryHelper.playGuardBreakSound(player);
+                        playSound = false;
+                    }
+                } else {
+                    playSound = false;
+                }
+
+                if (playSound) {
+                    ParryHelper.playBlockSound(dys);
+                }
+
+                // interrupting block action after BLOCKING attack with tool
+                if (((ParryItem) dys.getActiveItem().getItem()).frycparry_getParryAttributes().shouldStopUsingItemAfterBlockOrParry()) {
+                    ((CanBlock) dys).frycparry_stopUsingItemParry();
+                }
+
+                //damaging item that is not shield
+                if (!ParryHelper.hasShieldEquipped(dys)) {
+                    if (dys.getMainHandStack().isDamageable()) {
+
+                        dys.getMainHandStack().damage(1, dys, (entity) -> {
+                            entity.sendEquipmentBreakStatus(EquipmentSlot.MAINHAND);
+                        });
+                    }
+                } else {
+                    dys.damageShield(originalDamage);
+                    if (dys.getActiveItem().isEmpty()) dys.stopUsingItem();
+                }
+            }
+        }
+        return amount;
+    }
+
+
+    //removes the 5 tick block delay
+    @Inject(method = "isBlocking()Z", at = @At("HEAD"), cancellable = true)
+    private void modifyBlockDelay(CallbackInfoReturnable<Boolean> ret) {
+        LivingEntity dys = ((LivingEntity) (Object) this);
+        if (dys.isUsingItem() && !dys.getActiveItem().isEmpty()) {
+            Item item = dys.getActiveItem().getItem();
+            int blockDelay = ((ParryItem) item).frycparry_getParryAttributes().getBlockDelay() - ModEnchantments.getReflexEnchantment(dys);
+            if (blockDelay < 0) {
+                blockDelay = 0;
+            }
+            if (ParryHelper.isItemParryEnabled(dys.getActiveItem()) && item.getUseAction(dys.getActiveItem()) != UseAction.BLOCK) {
+                //BLOCKING_DATA is required to block with items that doesn't have UseAction.BLOCK
+                ret.setReturnValue(((ParryItem) item).frycparry_getUseParryAction(dys.getActiveItem()) == UseAction.BLOCK &&
+                        dys.getDataTracker().get(BLOCKING_DATA) &&
+                        ((ParryItem) item).frycparry_getParryAttributes().getMaxUseTimeParry() - this.itemUseTimeLeft >= blockDelay);
+            } else {
+                ret.setReturnValue(item.getUseAction(dys.getActiveItem()) == UseAction.BLOCK &&
+                        item.getMaxUseTime(dys.getActiveItem()) - this.itemUseTimeLeft >= blockDelay);
+            }
+        }
+    }
+
+    @Inject(at = @At("HEAD"), method = "handleStatus(B)V", cancellable = true)
+    private void cancelShieldBlockAndBreakStatuses(byte status, CallbackInfo info) {
+        if (status == EntityStatuses.BLOCK_WITH_SHIELD || status == EntityStatuses.BREAK_SHIELD) {
+            info.cancel();
+        }
+    }
+
+    //starts tracking BLOCKING_DATA and PARRY_DATA
+    @Inject(method = "initDataTracker()V", at = @At("HEAD"))
+    private void initBlockingData(CallbackInfo info) {
+        this.dataTracker.startTracking(BLOCKING_DATA, false);
+        this.dataTracker.startTracking(PARRY_DATA, false);
+    }
+
+
+    // decrements parryTimer and makes PARRY_DATA false when parryTimer is 0
+    @Inject(method = "tick()V", at = @At("TAIL"))
+    private void decrementParryDataTimer(CallbackInfo info) {
+        LivingEntity dys = ((LivingEntity) (Object) this);
+        if (parryTimer > 0) {
+            parryTimer--;
+        } else if (!dys.getWorld().isClient()) { // <---- parry data is always false on client
+            if (((CanBlock) dys).frycparry_getParryDataValue()) ((CanBlock) dys).frycparry_setParryDataToFalse();
+        }
+    }
+
+    // cancels stopUsingItem() method when BLOCKING_DATA is true
+    @Inject(method = "stopUsingItem()V", at = @At("HEAD"), cancellable = true)
+    private void cancelStopUsingItem(CallbackInfo info) {
+        LivingEntity dys = ((LivingEntity) (Object) this);
+        if (((CanBlock) dys).frycparry_getBlockingDataValue()) info.cancel();
+    }
+
+    // method to stop blocking with parry key
+    @Override
+    public void frycparry_stopUsingItemParry() {
+        LivingEntity dys = ((LivingEntity) (Object) this);
+        if (!dys.getActiveItem().isEmpty() && ParryHelper.isItemParryEnabled(dys.getActiveItem()) && !(dys.getActiveItem().getItem() instanceof ShieldItem)) {
+            ((ParryItem) dys.getActiveItem().getItem()).frycparry_onStoppedUsingParry(dys.getActiveItem(), dys.getWorld(), dys, dys.getItemUseTimeLeft());
+        } else {
+            dys.stopUsingItem();
+            return;
+        }
+
+        dys.clearActiveItem();
+    }
+
+
+    @WrapOperation(
+            method = "consumeItem()V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/item/ItemStack;finishUsing(Lnet/minecraft/world/World;Lnet/minecraft/entity/LivingEntity;)Lnet/minecraft/item/ItemStack;")
+    )
+    private ItemStack finishBlockingWhenRemainingUseTicksReachZero(ItemStack instance, World world, LivingEntity user, Operation<ItemStack> original) {
+        if (((CanBlock) user).frycparry_getBlockingDataValue()) {
+            return ((ParryItem) instance.getItem()).frycparry_finishUsingParry(instance, world, user);
+        } else {
+            return original.call(instance, world, user);
+        }
+    }
+
+    @Inject(method = "canHaveStatusEffect(Lnet/minecraft/entity/effect/StatusEffectInstance;)Z", at = @At("HEAD"), cancellable = true)
+    private void makeSomeMobsResistantToDisarm(StatusEffectInstance effect, CallbackInfoReturnable<Boolean> ret) {
+        if (effect.getEffectType() == ModEffects.DISARMED && this.getType().isIn(ModEntityTypeTags.DISARM_RESISTANT_MOBS)) {
+            ret.setReturnValue(false);
+        }
+    }
+
+    @Shadow
+    protected void setLivingFlag(int mask, boolean value) {
+    }
+
+    @Override
+    public void frycparry_setCurrentHandParry(Hand hand) {
+        LivingEntity dys = ((LivingEntity) (Object) this);
+        ItemStack itemStack = dys.getStackInHand(hand);
+        if (!itemStack.isEmpty() && !dys.isUsingItem()) {
+            this.activeItemStack = itemStack;
+            this.itemUseTimeLeft = ((ParryItem) itemStack.getItem()).frycparry_getParryAttributes().getMaxUseTimeParry();
+            if (!this.getWorld().isClient) {
+                this.setLivingFlag(1, true);
+                this.setLivingFlag(2, hand == Hand.OFF_HAND);
+            }
+
+        }
+    }
+
+    @Override
+    public void frycparry_setParryTimer(World world, int ticks) {
+        parryTimer = ticks;
+        if (!world.isClient()) {
+            if (((LivingEntity) (Object) this) instanceof ServerPlayerEntity player) {
+                PacketByteBuf buf = PacketByteBufs.create();
+                new InformClientAboutParryPayload(ticks).write(buf);
+                ServerPlayNetworking.send(player, ModPackets.INFORM_CLIENT_ABOUT_PARRY_ID, buf);
+            }
+        }
+    }
+
+    @Override
+    public boolean frycparry_hasParriedRecently() {
+        return parryTimer > 0;
+    }
+
+
+    //blocking data and parry data
+    @Override
+    public void frycparry_setBlockingDataToTrue() {
+        ((LivingEntity)(Object) this).getDataTracker().set(BLOCKING_DATA, true);
+    }
+
+    @Override
+    public void frycparry_setBlockingDataToFalse() {
+        ((LivingEntity)(Object) this).getDataTracker().set(BLOCKING_DATA, false);
+    }
+
+    @Override
+    public boolean frycparry_getBlockingDataValue() {
+        return ((LivingEntity)(Object) this).getDataTracker().get(BLOCKING_DATA);
+    }
+
+    @Override
+    public void frycparry_setParryDataToTrue() {
+        ((LivingEntity)(Object) this).getDataTracker().set(PARRY_DATA, true);
+    }
+
+    @Override
+    public void frycparry_setParryDataToFalse() {
+        ((LivingEntity)(Object) this).getDataTracker().set(PARRY_DATA, false);
+    }
+
+    @Override
+    public boolean frycparry_getParryDataValue() {
+        return ((LivingEntity)(Object) this).getDataTracker().get(PARRY_DATA);
+    }
+
+    static {
+        BLOCKING_DATA = DataTracker.registerData(LivingEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+        PARRY_DATA = DataTracker.registerData(LivingEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+    }
+
+
+}
