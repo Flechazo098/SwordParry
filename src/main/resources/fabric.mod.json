@@ -27,6 +27,7 @@
   "depends": {
     "fabricloader": "*",
     "fabric": "*",
-    "minecraft": "${minecraft_version}"
+    "mite": ">=0.6.9",
+    "minecraft": "1.18.2"
   }
 }

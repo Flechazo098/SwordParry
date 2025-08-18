@@ -22,10 +22,7 @@ import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.AxeItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.ShieldItem;
+import net.minecraft.item.*;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Hand;
@@ -278,6 +275,19 @@ abstract class LivingEntityMixin extends Entity implements CanBlock {
         }
 
         dys.clearActiveItem();
+    }
+
+    @SuppressWarnings({"InvalidInjectorMethodSignature", "MixinAnnotationTarget"})
+    @WrapOperation(method = "damage", at = {
+            //For user side obfuscated environment
+            @At(value = "INVOKE", target = "Lnet/minecraft/class_1297;canKnockBackTarget(Lnet/minecraft/class_1309;)Z", remap = false),
+            //For dev side environment
+            @At(value = "INVOKE", target = "Lnet/minecraft/entity/Entity;canKnockBackTarget(Lnet/minecraft/entity/LivingEntity;)Z", remap = false)}, expect = 1, require = 1)
+    private boolean redirectFixSwordBlockDamage(Entity instance, LivingEntity livingEntity, Operation<Boolean> original) {
+        if (!(this.activeItemStack.getItem() instanceof ShieldItem)) {
+            return false;
+        }
+        return original.call(instance, livingEntity);
     }
 
 
