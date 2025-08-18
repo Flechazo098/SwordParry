@@ -1,0 +1,16 @@
+{
+  "package": "net.fryc.frycparry.mite.mixin",
+  "plugin": "net.fryc.frycparry.mite.mixin.MiteMixinPlugin",
+  "compatibilityLevel": "JAVA_17",
+  "required": true,
+  "minVersion": "0.8",
+  "refmap": "slashblade.refmap.json",
+  "mixins": [
+    "MiteLivingEntityMixin"
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

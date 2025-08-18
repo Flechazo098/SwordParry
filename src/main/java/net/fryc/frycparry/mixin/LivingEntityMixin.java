@@ -277,20 +277,6 @@ abstract class LivingEntityMixin extends Entity implements CanBlock {
         dys.clearActiveItem();
     }
 
-    @SuppressWarnings({"InvalidInjectorMethodSignature", "MixinAnnotationTarget"})
-    @WrapOperation(method = "damage", at = {
-            //For user side obfuscated environment
-            @At(value = "INVOKE", target = "Lnet/minecraft/class_1297;canKnockBackTarget(Lnet/minecraft/class_1309;)Z", remap = false),
-            //For dev side environment
-            @At(value = "INVOKE", target = "Lnet/minecraft/entity/Entity;canKnockBackTarget(Lnet/minecraft/entity/LivingEntity;)Z", remap = false)}, expect = 1, require = 1)
-    private boolean redirectFixSwordBlockDamage(Entity instance, LivingEntity livingEntity, Operation<Boolean> original) {
-        if (!(this.activeItemStack.getItem() instanceof ShieldItem)) {
-            return false;
-        }
-        return original.call(instance, livingEntity);
-    }
-
-
     @WrapOperation(
             method = "consumeItem()V",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/item/ItemStack;finishUsing(Lnet/minecraft/world/World;Lnet/minecraft/entity/LivingEntity;)Lnet/minecraft/item/ItemStack;")
